@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MDS-NMS - Escala de Avaliação Não Motora (Edição Eletrônica)</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        /* Estilos de impressão e base */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .print-only { display: none; }
+        @media print {
+            .no-print { display: none; }
+            .print-only { display: block; }
+            body { background-color: white; }
+        }
+        /* Utilitários de UI */
+        .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+        .input-std { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; }
+        .btn { padding: 8px 16px; border-radius: 4px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background-color: #2563eb; color: white; }
+        .btn-primary:hover { background-color: #1d4ed8; }
+        .btn-secondary { background-color: #64748b; color: white; }
+        .btn-success { background-color: #16a34a; color: white; }
+        .btn-danger { background-color: #dc2626; color: white; }
+    </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel">
+
+// --- DADOS DA ESCALA (BASEADO NO PDF FORNECIDO) ---
+const SCALE_META = {
+    title: "MDS-NMS - Escala de Avaliação Não Motora",
+    version: "1.1 (Tradução Oficial MDS Português)",
+    ref: "International Parkinson and Movement Disorder Society (2019)",
+    source_citation: "Chaudhuri KR, Martinez-Martin P, et al. MDS-NMS Official Portuguese Translation.",
+    disclaimer: "FERRAMENTA PARA PESQUISA. NÃO SUBSTITUI AVALIAÇÃO CLÍNICA PROFISSIONAL. Esta aplicação não coleta dados pessoais externamente."
+};
+
+// Definições de pontuação
+const OPTS_FREQ = [
+    { val: 0, label: "0: Nunca", desc: "Nunca" },
+    { val: 1, label: "1: Raramente", desc: "≤ 10% do tempo" },
+    { val: 2, label: "2: Às vezes", desc: "11-25% do tempo" },
+    { val: 3, label: "3: Frequentemente", desc: "26-50% do tempo" },
+    { val: 4, label: "4: Maior parte do tempo", desc: "≥ 51% do tempo" }
+];
+
+const OPTS_SEV = [
+    { val: 0, label: "0: Ausente", desc: "Apenas se frequência = 0" },
+    { val: 1, label: "1: Mínima", desc: "Sem sofrimento/perturbação" },
+    { val: 2, label: "2: Leve", desc: "Mínimo sofrimento/perturbação" },
+    { val: 3, label: "3: Moderada", desc: "Moderado sofrimento/perturbação" },
+    { val: 4, label: "4: Grave", desc: "Grande sofrimento/perturbação" }
+];
+
+// Estrutura completa dos domínios A-M
+const DOMAINS = [
+    {
+        id: "A", title: "A. Depressão", items: [
+            { id: "A1", text: "1. Sentiu-se triste ou deprimido?" },
+            { id: "A2", text: "2. Teve dificuldade em sentir prazer?" },
+            { id: "A3", text: "3. Sentiu-se sem esperança?" },
+            { id: "A4", text: "4. Teve pensamentos negativos sobre si mesmo?" },
+            { id: "A5", text: "5. Sentiu que a vida não vale a pena ser vivida?" }
+        ]
+    },
+    {
+        id: "B", title: "B. Ansiedade", items: [
+            { id: "B1", text: "1. Sentiu-se preocupado?" },
+            { id: "B2", text: "2. Sentiu-se nervoso?" },
+            { id: "B3", text: "3. Teve ataques de pânico ou de ansiedade?" },
+            { id: "B4", text: "4. Tem-se preocupado em estar em público ou em situações sociais?" }
+        ]
+    },
+    {
+        id: "C", title: "C. Apatia", items: [
+            { id: "C1", text: "1. Teve uma motivação reduzida para iniciar as atividades do dia-a-dia?" },
+            { id: "C2", text: "2. Teve um interesse reduzido em falar com as pessoas?" },
+            { id: "C3", text: "3. Teve uma redução na experiência de emoções?" }
+        ]
+    },
+    {
+        id: "D", title: "D. Psicose", items: [
+            { id: "D1", text: "1. Viu algo ou pessoas nas margens do seu campo visual? (fenômenos de passagem ou presença)" },
+            { id: "D2", text: "2. Interpretou visualmente mal um objeto real? (ilusões)" },
+            { id: "D3", text: "3. Viu, ouviu, sentiu, provou ou cheirou coisas que outras pessoas não o fizeram? (alucinações)" },
+            { id: "D4", text: "4. Acreditou em coisas como verdadeiras enquanto outras pessoas não acreditaram? (por exemplo, delírios)" }
+        ]
+    },
+    {
+        id: "E", title: "E. Controle de Impulso e Transtornos Relacionados", items: [
+            { id: "E1", text: "1. Teve um aumento em comportamentos como jogo, atividade sexual, compras ou comer?" },
+            { id: "E2", text: "2. Teve um aumento em outros comportamentos (uso da Internet, hobbies, atividades artísticas, etc.)?" },
+            { id: "E3", text: "3. Manuseia objetos repetidamente sem qualquer propósito? (punding)" },
+            { id: "E4", text: "4. Tem tomado rotineiramente mais medicamentos para a doença de Parkinson do que foi prescrito? (SDD)" }
+        ]
+    },
+    {
+        id: "F", title: "F. Cognição", items: [
+            { id: "F1", text: "1. Teve dificuldade em se lembrar das coisas?" },
+            { id: "F2", text: "2. Teve dificuldade em aprender coisas novas?" },
+            { id: "F3", text: "3. Teve dificuldade em manter o foco ou prestar atenção?" },
+            { id: "F4", text: "4. Teve dificuldade em encontrar palavras ou expressar ideias?" },
+            { id: "F5", text: "5. Teve dificuldade em planejar ou realizar tarefas complexas (capacidades executivas)?" },
+            { id: "F6", text: "6. Teve dificuldade em julgar a posição das coisas? (habilidades visuo-espaciais)" }
+        ]
+    },
+    {
+        id: "G", title: "G. Hipotensão Ortostática", items: [
+            { id: "G1", text: "1. Sentiu-se tonto ou desmaiou ao mudar de posição?" },
+            { id: "G2", text: "2. Teve tontura ou fraqueza ao se levantar?" }
+        ]
+    },
+    {
+        id: "H", title: "H. Urinário", items: [
+            { id: "H1", text: "1. Teve uma necessidade urgente em urinar? (urgência urinária)" },
+            { id: "H2", text: "2. Teve necessidade de urinar mais do que a cada 2 horas? (frequência urinária)" },
+            { id: "H3", text: "3. Teve necessidade de urinar mais de duas vezes durante a noite? (noctúria)" }
+        ]
+    },
+    {
+        id: "I", title: "I. Sexual", items: [
+            { id: "I1", text: "1. Teve redução do desejo ou do interesse pelo sexo?" },
+            { id: "I2", text: "2. Teve dificuldade com excitação sexual ou no desempenho sexual (não motor)?" }
+        ]
+    },
+    {
+        id: "J", title: "J. Gastrointestinal", items: [
+            { id: "J1", text: "1. Teve saliva em excesso a ponto de perder o controle e de se babar?" },
+            { id: "J2", text: "2. Teve dificuldade em engolir?" },
+            { id: "J3", text: "3. Teve náusea ou enjoo no estômago?" },
+            { id: "J4", text: "4. Teve obstipação intestinal (prisão de ventre)?" }
+        ]
+    },
+    {
+        id: "K", title: "K. Sono e Vigília", items: [
+            { id: "K1", text: "1. Teve dificuldade em adormecer ou em permanecer a dormir? (insônia)" },
+            { id: "K2", text: "2. Teve representação dos sonhos durante o sono (gritar, agitar)? (Distúrbio comportamental do sono REM)" },
+            { id: "K3", text: "3. Adormeceu acidentalmente durante o dia?" },
+            { id: "K4", text: "4. Teve um desejo irresistível de mover pernas ou braços quando estava sentado ou deitado? (inquietação)" },
+            { id: "K5", text: "5. Teve algum movimento brusco involuntário nos braços ou pernas durante o sono? (movimentos periódicos)" },
+            { id: "K6", text: "6. Acordou à noite devido a ressonar/ronco, respiração ofegante ou dificuldade em respirar?" }
+        ]
+    },
+    {
+        id: "L", title: "L. Dor", items: [
+            { id: "L1", text: "1. Teve dores musculares, articulares ou nas costas?" },
+            { id: "L2", text: "2. Sentiu uma dor profunda dentro do corpo?" },
+            { id: "L3", text: "3. Teve dor devido a movimentos anormais (distonia)?" },
+            { id: "L4", text: "4. Teve outros tipos de dor? (ex: dor noturna, orofacial)" }
+        ]
+    },
+    {
+        id: "M", title: "M. Outros", items: [
+            { id: "M1", text: "1. Teve perda de peso não intencional?", special: "binary_freq" },
+            { id: "M2", text: "2. Teve uma diminuição no olfato?", special: "binary_freq" },
+            { id: "M3", text: "3. Sentiu-se excessivamente cansado fisicamente? (fadiga física)" },
+            { id: "M4", text: "4. Sentiu-se excessivamente cansado mentalmente? (fadiga mental)" },
+            { id: "M5", text: "5. Teve transpiração excessiva não relacionada com temperatura?" }
+        ]
+    }
+];
+
+// Dados da subescala de Flutuações (MDS-NMS NMF)
+const NMF_ITEMS = [
+    { id: "NMF1", text: "1. Depressão" },
+    { id: "NMF2", text: "2. Ansiedade" },
+    { id: "NMF3", text: "3. Capacidades cognitivas ou de pensamento" },
+    { id: "NMF4", text: "4. Sintomas urinários" },
+    { id: "NMF5", text: "5. Inquietação" },
+    { id: "NMF6", text: "6. Dor" },
+    { id: "NMF7", text: "7. Fadiga" },
+    { id: "NMF8", text: "8. Transpiração excessiva" }
+];
+
+// --- COMPONENTES REACT ---
+
+const { useState, useEffect, useMemo } = React;
+
+function App() {
+    // ESTADOS GLOBAIS
+    const [meta, setMeta] = useState({
+        patientId: "",
+        date: new Date().toISOString().split('T')[0],
+        evaluator: "",
+        respondent: "Patient", // Patient, Caregiver, Both
+        motorState: "On",
+        consent: false
+    });
+
+    const [responses, setResponses] = useState({}); // { itemId: { freq: int, sev: int, comment: str } }
+    const [nmfData, setNmfData] = useState({ active: false, changes: {}, timeOff: 0 }); // changes: { itemId: val }
+    const [activeTab, setActiveTab] = useState("main"); // main, nmf, report
+
+    // --- LÓGICA DE CÁLCULO ---
+    
+    // Atualizar resposta de item padrão
+    const handleResponse = (itemId, field, value) => {
+        setResponses(prev => {
+            const currentItem = prev[itemId] || { freq: "", sev: "", comment: "" };
+            let newItem = { ...currentItem, [field]: value };
+            
+            // Regra: Se Frequência = 0 ("Nunca"), Gravidade deve ser 0
+            if (field === 'freq' && parseInt(value) === 0) {
+                newItem.sev = 0;
+            }
+            
+            // Regra: Se mudar Frequência de 0 para algo >0, limpar gravidade se era 0 automática
+            if (field === 'freq' && parseInt(value) > 0 && currentItem.freq === 0) {
+                newItem.sev = ""; // Forçar re-seleção
+            }
+
+            return { ...prev, [itemId]: newItem };
+        });
+    };
+
+    const handleNmfChange = (itemId, val) => {
+        setNmfData(prev => ({
+            ...prev,
+            changes: { ...prev.changes, [itemId]: parseInt(val) }
+        }));
+    };
+
+    // Cálculos de Escore
+    const scores = useMemo(() => {
+        let domainScores = {};
+        let totalScore = 0;
+        let missingItems = [];
+        let totalAnswered = 0;
+        let totalItemsCount = 0;
+
+        DOMAINS.forEach(dom => {
+            let dScore = 0;
+            dom.items.forEach(item => {
+                totalItemsCount++;
+                const r = responses[item.id];
+                if (r && r.freq !== "" && r.sev !== "") {
+                    const itemScore = parseInt(r.freq) * parseInt(r.sev);
+                    dScore += itemScore;
+                    totalAnswered++;
+                } else {
+                    missingItems.push(item.id);
+                }
+            });
+            domainScores[dom.id] = dScore;
+            totalScore += dScore;
+        });
+
+        // NMF Score
+        let nmfChangeScore = 0;
+        let nmfTotal = 0;
+        if (nmfData.active) {
+            Object.values(nmfData.changes).forEach(v => nmfChangeScore += (v || 0));
+            nmfTotal = nmfChangeScore * (parseInt(nmfData.timeOff) || 0);
+        }
+
+        return { domainScores, totalScore, missingItems, totalAnswered, totalItemsCount, nmfTotal, nmfChangeScore };
+    }, [responses, nmfData]);
+
+
+    // --- FUNÇÕES DE EXPORTAÇÃO ---
+
+    const generateCSV = () => {
+        let csvContent = "data:text/csv;charset=utf-8,";
+        // Header
+        csvContent += "ID_Participante,Data,Avaliador,Item_ID,Dominio,Texto_Item,Frequencia,Gravidade,Escore_Item,Comentario\n";
+        
+        DOMAINS.forEach(dom => {
+            dom.items.forEach(item => {
+                const r = responses[item.id] || { freq: "", sev: "", comment: "" };
+                const score = (r.freq !== "" && r.sev !== "") ? r.freq * r.sev : "";
+                const row = [
+                    `"${meta.patientId}"`,
+                    meta.date,
+                    `"${meta.evaluator}"`,
+                    item.id,
+                    dom.id,
+                    `"${item.text.replace(/"/g, '""')}"`,
+                    r.freq,
+                    r.sev,
+                    score,
+                    `"${r.comment.replace(/"/g, '""')}"`
+                ];
+                csvContent += row.join(",") + "\n";
+            });
+        });
+
+        // NMF Rows
+        if (nmfData.active) {
+             NMF_ITEMS.forEach(item => {
+                 const val = nmfData.changes[item.id] || "";
+                 csvContent += `"${meta.patientId}",${meta.date},"${meta.evaluator}",${item.id},NMF,"${item.text}",${val},NA,${val},"Change Score"\n`;
+             });
+             csvContent += `"${meta.patientId}",${meta.date},"${meta.evaluator}",NMF_TIME,NMF,"Tempo em Off",${nmfData.timeOff},NA,${nmfData.timeOff},"Time Score"\n`;
+        }
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `MDS_NMS_${meta.patientId}_${meta.date}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const generateJSON = () => {
+        const data = {
+            metadata: SCALE_META,
+            session: meta,
+            scores: scores,
+            responses: responses,
+            nmf: nmfData
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", `MDS_NMS_${meta.patientId}_${meta.date}.json`);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    };
+
+    const generatePDF = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        // Header
+        doc.setFontSize(16);
+        doc.text("MDS-NMS - Relatório de Resultados", 14, 20);
+        
+        doc.setFontSize(10);
+        doc.text(`Paciente: ${meta.patientId}`, 14, 30);
+        doc.text(`Data: ${meta.date}`, 14, 35);
+        doc.text(`Avaliador: ${meta.evaluator}`, 14, 40);
+        doc.text(`Estado Motor: ${meta.motorState}`, 100, 30);
+        doc.text(`Entrevistado: ${meta.respondent}`, 100, 35);
+
+        // Score Summary Table
+        const summaryData = DOMAINS.map(d => [d.title, scores.domainScores[d.id]]);
+        summaryData.push(["TOTAL MDS-NMS", scores.totalScore]);
+        if(nmfData.active) {
+            summaryData.push(["Total Flutuações (NMF)", scores.nmfTotal]);
+        }
+
+        doc.autoTable({
+            startY: 50,
+            head: [['Domínio', 'Escore']],
+            body: summaryData,
+            theme: 'grid',
+            headStyles: { fillColor: [41, 128, 185] }
+        });
+
+        // Detailed Items Table
+        let rows = [];
+        DOMAINS.forEach(dom => {
+            // Domain Header Row
+            rows.push([{ content: dom.title, colSpan: 6, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+            
+            dom.items.forEach(item => {
+                const r = responses[item.id] || { freq: "-", sev: "-", comment: "" };
+                const score = (typeof r.freq === 'number' && typeof r.sev === 'number') ? r.freq * r.sev : "-";
+                
+                rows.push([
+                    item.id,
+                    item.text.substring(0, 60) + (item.text.length > 60 ? "..." : ""),
+                    r.freq,
+                    r.sev,
+                    score,
+                    r.comment
+                ]);
+            });
+        });
+
+        doc.autoTable({
+            startY: doc.lastAutoTable.finalY + 10,
+            head: [['ID', 'Item', 'Freq', 'Grav', 'Total', 'Obs']],
+            body: rows,
+            theme: 'plain',
+            styles: { fontSize: 8 },
+            columnStyles: { 
+                0: { cellWidth: 15 },
+                1: { cellWidth: 80 },
+                5: { cellWidth: 30 } 
+            }
+        });
+
+        // Footer
+        const pageCount = doc.internal.getNumberOfPages();
+        for(let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.text("Relatório gerado eletronicamente. Não substitui avaliação clínica.", 14, 285);
+            doc.text(`Página ${i} de ${pageCount}`, 190, 285, { align: 'right' });
+        }
+
+        doc.save(`MDS_NMS_Report_${meta.patientId}.pdf`);
+    };
+
+    // --- RENDERIZAÇÃO ---
+
+    if (!meta.consent) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-4">
+                <div className="card max-w-2xl p-8 shadow-xl">
+                    <h1 className="text-2xl font-bold text-blue-800 mb-4">{SCALE_META.title}</h1>
+                    <p className="mb-4 text-gray-600">Versão: {SCALE_META.version}</p>
+                    
+                    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                        <p className="font-bold text-yellow-800">Aviso Legal e Instruções</p>
+                        <p className="text-sm text-yellow-700 mt-2">
+                            Esta ferramenta é destinada ao uso por pesquisadores e profissionais de saúde para auxiliar na aplicação da escala MDS-NMS.
+                            <ul className="list-disc ml-5 mt-2">
+                                <li>Todos os dados permanecem no seu navegador (offline).</li>
+                                <li>Nenhuma informação é enviada para servidores externos.</li>
+                                <li>Os cálculos são automatizados, mas devem ser verificados pelo clínico.</li>
+                            </ul>
+                        </p>
+                    </div>
+
+                    <div className="flex items-center mb-6">
+                        <input 
+                            type="checkbox" 
+                            id="consent" 
+                            className="w-5 h-5 text-blue-600"
+                            onChange={(e) => setMeta({...meta, consent: e.target.checked})}
+                        />
+                        <label htmlFor="consent" className="ml-2 text-gray-700 font-medium">
+                            Compreendo que esta é uma ferramenta de apoio à pesquisa e aceito os termos de uso local.
+                        </label>
+                    </div>
+
+                    <button 
+                        disabled={!meta.consent}
+                        onClick={() => setMeta({...meta, consent: true})} // Redundant but explicit
+                        className={`w-full py-3 rounded text-white font-bold ${!meta.consent ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                    >
+                        Iniciar Aplicação
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen pb-20">
+            {/* Header Fixo */}
+            <header className="bg-blue-800 text-white p-4 shadow-md sticky top-0 z-50">
+                <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center">
+                    <div>
+                        <h1 className="text-xl font-bold">MDS-NMS Eletrônico</h1>
+                        <span className="text-xs text-blue-200">Pontuação Total Atual: {scores.totalScore}</span>
+                    </div>
+                    <div className="flex gap-4 mt-2 md:mt-0 text-sm">
+                        <div className="flex flex-col">
+                            <span className="opacity-75">Progresso</span>
+                            <span className="font-bold">{scores.totalAnswered} / {scores.totalItemsCount}</span>
+                        </div>
+                        {scores.missingItems.length > 0 && (
+                            <div className="flex flex-col text-red-300">
+                                <span className="opacity-75">Pendentes</span>
+                                <span className="font-bold">{scores.missingItems.length} itens</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            <main className="max-w-6xl mx-auto p-4">
+                
+                {/* Meta Data Panel */}
+                <div className="card p-4 mb-6 bg-gray-50 border border-gray-200">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase">ID Paciente</label>
+                            <input type="text" className="input-std" value={meta.patientId} onChange={e => setMeta({...meta, patientId: e.target.value})} placeholder="Ex: PT-001" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase">Data</label>
+                            <input type="date" className="input-std" value={meta.date} onChange={e => setMeta({...meta, date: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase">Avaliador</label>
+                            <input type="text" className="input-std" value={meta.evaluator} onChange={e => setMeta({...meta, evaluator: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase">Estado Motor</label>
+                            <select className="input-std" value={meta.motorState} onChange={e => setMeta({...meta, motorState: e.target.value})}>
+                                <option value="On">On</option>
+                                <option value="Off">Off</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex border-b border-gray-300 mb-6">
+                    <button 
+                        className={`py-2 px-4 font-semibold ${activeTab === 'main' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                        onClick={() => setActiveTab('main')}
+                    >
+                        Escala Principal (A-M)
+                    </button>
+                    <button 
+                        className={`py-2 px-4 font-semibold ${activeTab === 'nmf' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                        onClick={() => setActiveTab('nmf')}
+                    >
+                        Flutuações (NMF)
+                    </button>
+                    <button 
+                        className={`py-2 px-4 font-semibold ${activeTab === 'report' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                        onClick={() => setActiveTab('report')}
+                    >
+                        Relatório & Exportação
+                    </button>
+                </div>
+
+                {/* MAIN SCALE CONTENT */}
+                {activeTab === 'main' && (
+                    <div className="space-y-8">
+                        {DOMAINS.map(dom => (
+                            <div key={dom.id} className="card overflow-hidden">
+                                <div className="bg-slate-100 p-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h2 className="font-bold text-lg text-slate-800">{dom.title}</h2>
+                                    <span className="text-sm font-mono bg-white px-2 py-1 rounded border">
+                                        Subtotal: {scores.domainScores[dom.id]}
+                                    </span>
+                                </div>
+                                <div className="p-4 divide-y">
+                                    {dom.items.map(item => {
+                                        const res = responses[item.id] || { freq: "", sev: "", comment: "" };
+                                        const isMissing = res.freq === "" || (res.freq > 0 && res.sev === "");
+                                        // Itens M1 e M2 usam frequência binária (0 ou 4)
+                                        const isBinaryFreq = item.special === "binary_freq";
+                                        
+                                        return (
+                                            <div key={item.id} className={`py-4 ${isMissing ? 'border-l-4 border-l-orange-300 pl-3' : ''}`}>
+                                                <div className="flex flex-col md:flex-row gap-4">
+                                                    <div className="flex-1">
+                                                        <p className="font-medium text-gray-800 mb-2">{item.text}</p>
+                                                        <input 
+                                                            type="text" 
+                                                            placeholder="Comentário (opcional)" 
+                                                            className="text-sm border rounded p-1 w-full mt-1"
+                                                            value={res.comment}
+                                                            onChange={(e) => handleResponse(item.id, 'comment', e.target.value)}
+                                                        />
+                                                    </div>
+                                                    
+                                                    {/* Controls */}
+                                                    <div className="flex gap-4 items-start bg-gray-50 p-2 rounded">
+                                                        {/* Frequency */}
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-gray-500 mb-1">Frequência</label>
+                                                            <select 
+                                                                className="input-std w-40 text-sm"
+                                                                value={res.freq}
+                                                                onChange={(e) => handleResponse(item.id, 'freq', e.target.value)}
+                                                            >
+                                                                <option value="">Selecione...</option>
+                                                                {isBinaryFreq ? (
+                                                                    <>
+                                                                        <option value="0">0: Ausente</option>
+                                                                        <option value="4">4: Presente</option>
+                                                                    </>
+                                                                ) : (
+                                                                    OPTS_FREQ.map(opt => (
+                                                                        <option key={opt.val} value={opt.val}>{opt.label}</option>
+                                                                    ))
+                                                                )}
+                                                            </select>
+                                                        </div>
+
+                                                        {/* Severity */}
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-gray-500 mb-1">Gravidade</label>
+                                                            <select 
+                                                                className={`input-std w-40 text-sm ${parseInt(res.freq) === 0 ? 'bg-gray-200 text-gray-400' : ''}`}
+                                                                value={res.sev}
+                                                                onChange={(e) => handleResponse(item.id, 'sev', e.target.value)}
+                                                                disabled={parseInt(res.freq) === 0}
+                                                            >
+                                                                <option value="">Selecione...</option>
+                                                                {OPTS_SEV.map(opt => (
+                                                                    <option key={opt.val} value={opt.val}>{opt.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+
+                                                        {/* Item Score */}
+                                                        <div className="flex flex-col items-center justify-center h-full w-16">
+                                                            <label className="block text-xs font-bold text-gray-400 mb-1">Total</label>
+                                                            <span className="font-bold text-xl text-blue-600">
+                                                                {(res.freq !== "" && res.sev !== "") ? res.freq * res.sev : "-"}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* NMF SECTION */}
+                {activeTab === 'nmf' && (
+                    <div className="card p-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold">Flutuações Não Motoras (MDS-NMS NMF)</h2>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    className="w-5 h-5"
+                                    checked={nmfData.active}
+                                    onChange={(e) => setNmfData({...nmfData, active: e.target.checked})}
+                                />
+                                <span className="font-medium">Ativar esta seção</span>
+                            </label>
+                        </div>
+
+                        {!nmfData.active ? (
+                            <div className="text-gray-500 italic text-center p-10">
+                                Se o paciente não utiliza medicação para Parkinson ou não tem flutuações, esta seção permanece desativada (Pontuação = 0).
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                <p className="text-sm text-gray-600 bg-blue-50 p-3 rounded">
+                                    Avalie o <strong>Grau de Mudança</strong> do período "On" para "Off" para cada categoria (0=Sem alteração, 4=Grande).
+                                </p>
+                                
+                                <div className="grid grid-cols-1 gap-4">
+                                    {NMF_ITEMS.map(item => (
+                                        <div key={item.id} className="flex justify-between items-center border-b pb-2">
+                                            <span>{item.text}</span>
+                                            <div className="flex gap-1">
+                                                {[0,1,2,3,4].map(val => (
+                                                    <button
+                                                        key={val}
+                                                        onClick={() => handleNmfChange(item.id, val)}
+                                                        className={`w-8 h-8 rounded-full border ${nmfData.changes[item.id] === val ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+                                                    >
+                                                        {val}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-8 border-t pt-4">
+                                    <label className="block font-bold mb-2">Tempo gasto no estado não motor "Off":</label>
+                                    <select 
+                                        className="input-std max-w-md"
+                                        value={nmfData.timeOff}
+                                        onChange={(e) => setNmfData({...nmfData, timeOff: e.target.value})}
+                                    >
+                                        <option value="0">Selecione...</option>
+                                        <option value="1">1: Raramente (≤ 10% do dia acordado)</option>
+                                        <option value="2">2: Às vezes (11-25%)</option>
+                                        <option value="3">3: Frequentemente (26-50%)</option>
+                                        <option value="4">4: Maior parte do tempo (≥ 51%)</option>
+                                    </select>
+                                </div>
+
+                                <div className="bg-slate-100 p-4 rounded text-right">
+                                    <p>Subtotal Mudança: <strong>{scores.nmfChangeScore}</strong></p>
+                                    <p>Subtotal Tempo: <strong>{nmfData.timeOff}</strong></p>
+                                    <p className="text-xl font-bold text-blue-800 mt-2">Total NMF: {scores.nmfTotal}</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* REPORT TAB */}
+                {activeTab === 'report' && (
+                    <div className="card p-8">
+                        <h2 className="text-2xl font-bold mb-6">Resumo e Exportação</h2>
+                        
+                        {scores.missingItems.length > 0 ? (
+                            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded mb-6">
+                                <h3 className="font-bold flex items-center gap-2">⚠️ Atenção: Itens Incompletos</h3>
+                                <p>Há {scores.missingItems.length} itens sem resposta completa (Frequência x Gravidade). A exportação pode estar incompleta.</p>
+                                <div className="mt-2 text-xs flex flex-wrap gap-1">
+                                    {scores.missingItems.map(id => <span key={id} className="bg-white border px-1 rounded">{id}</span>)}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-green-50 border border-green-200 text-green-700 p-4 rounded mb-6">
+                                <h3 className="font-bold">✅ Todos os itens respondidos</h3>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                            <div>
+                                <h3 className="font-bold border-b mb-2">Resumo por Domínio</h3>
+                                <table className="w-full text-sm">
+                                    <tbody>
+                                        {DOMAINS.map(d => (
+                                            <tr key={d.id} className="border-b">
+                                                <td className="py-1">{d.title}</td>
+                                                <td className="font-bold text-right">{scores.domainScores[d.id]}</td>
+                                            </tr>
+                                        ))}
+                                        {nmfData.active && (
+                                            <tr className="bg-blue-50">
+                                                <td className="py-2 font-semibold">Flutuações (NMF)</td>
+                                                <td className="font-bold text-right py-2">{scores.nmfTotal}</td>
+                                            </tr>
+                                        )}
+                                        <tr className="text-lg font-bold bg-gray-100">
+                                            <td className="py-2">TOTAL GERAL (MDS-NMS)</td>
+                                            <td className="text-right py-2">{scores.totalScore}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <h3 className="font-bold border-b mb-2">Ações</h3>
+                                <button onClick={generatePDF} className="btn btn-primary w-full flex justify-between items-center">
+                                    <span>Baixar PDF (Relatório Clínico)</span>
+                                    <span>📄</span>
+                                </button>
+                                <button onClick={generateCSV} className="btn btn-secondary w-full flex justify-between items-center">
+                                    <span>Baixar CSV (Planilha)</span>
+                                    <span>📊</span>
+                                </button>
+                                <button onClick={generateJSON} className="btn btn-secondary w-full flex justify-between items-center">
+                                    <span>Baixar JSON (Dados Brutos)</span>
+                                    <span>{}</span>
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        if(confirm("Deseja realmente limpar todo o formulário?")) {
+                                            setResponses({});
+                                            setMeta({...meta, patientId: ""});
+                                            setNmfData({ active: false, changes: {}, timeOff: 0 });
+                                            window.scrollTo(0,0);
+                                            setActiveTab('main');
+                                        }
+                                    }}
+                                    className="btn btn-danger w-full mt-8"
+                                >
+                                    Reiniciar / Novo Paciente
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+            </main>
+        </div>
+    );
+}
+
+// Inicializar React
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+
+</script>
+</body>
+</html>
